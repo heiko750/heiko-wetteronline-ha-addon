@@ -12,10 +12,10 @@
     "mqtt_host": "core-mosquitto",
     "mqtt_port": 1883
   },
-  "schema": [
-    { "name": "location", "type": "string", "required": true },
-    { "name": "interval", "type": "integer", "required": true },
-    { "name": "mqtt_host", "type": "string", "required": true },
-    { "name": "mqtt_port", "type": "integer", "required": true }
-  ]
+  "schema": {
+    "location": "str",
+    "interval": "int",
+    "mqtt_host": "str",
+    "mqtt_port": "int"
+  }
 }

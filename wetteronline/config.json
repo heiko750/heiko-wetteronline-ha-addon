@@ -1,7 +1,7 @@
 {
   "name": "WetterOnline Scraper",
   "version": "1.9.0",
-  "slug": "local_wetteronline",
+  "slug": "wetteronline",
   "description": "Scrapes hourly temperature and cloud/sun data from WetterOnline and publishes via MQTT with auto-discovery.",
   "startup": "services",
   "boot": "auto",
@@ -17,5 +17,8 @@
     "interval": "int",
     "mqtt_host": "str",
     "mqtt_port": "int"
+  },
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": "."
   }
-}

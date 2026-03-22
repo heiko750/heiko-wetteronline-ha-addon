@@ -13,11 +13,3 @@ COPY run.sh /run.sh
 RUN chmod a+x /run.sh
 
 CMD [ "/run.sh" ]
-ARG BUILD_FROM=ghcr.io/home-assistant/aarch64-base-python:latest
-FROM $BUILD_FROM
-
-COPY rootfs/requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt || true
-# new
-# force rebuild
-# force rebuild3

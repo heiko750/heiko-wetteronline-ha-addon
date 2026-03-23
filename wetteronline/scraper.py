@@ -71,8 +71,11 @@ async def scrape():
 
             client.publish(f"wetteronline/hourly/{hour_text}/temp", temp_text, retain=True)
             client.publish(f"wetteronline/hourly/{hour_text}/icon", icon_attr, retain=True)
+            # Neue Bestätigungszeile für das Log:
+            print(f"MQTT gesendet: {hour_text} Uhr -> {temp_text}°C (Icon: {icon_attr})")
 
         await browser.close()
+        print("Scrape-Vorgang abgeschlossen.") # Abschlussmeldung
 
 if __name__ == "__main__":
     asyncio.run(scrape())

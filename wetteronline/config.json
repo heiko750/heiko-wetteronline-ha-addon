@@ -1,6 +1,6 @@
 {
   "name": "WetterOnline Scraper",
-  "version": "1.12.0",
+  "version": "1.12.1",
   "slug": "wetteronline",
   "description": "Scrapes hourly temperature and cloud/sun data from WetterOnline and publishes via MQTT with auto-discovery.",
   "startup": "services",

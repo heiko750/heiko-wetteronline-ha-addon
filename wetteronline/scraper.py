@@ -74,6 +74,7 @@ async def scrape():
             # Neue Bestätigungszeile für das Log:
             print(f"MQTT gesendet: {hour_text} Uhr -> {temp_text}°C (Icon: {icon_attr})")
 
+        await asyncio.sleep(2)
         await browser.close()
         print("Scrape-Vorgang abgeschlossen.") # Abschlussmeldung
 

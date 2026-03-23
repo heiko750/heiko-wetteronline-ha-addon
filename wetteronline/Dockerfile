@@ -1,5 +1,5 @@
 ARG BUILD_FROM
-FROM \${BUILD_FROM}
+FROM ${BUILD_FROM}
 
 # Install pip (falls nicht vorhanden)
 RUN apk add --no-cache py3-pip

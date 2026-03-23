@@ -49,6 +49,12 @@ async def scrape():
         page = await browser.new_page()
 
         await page.goto(URL, timeout=60000, wait_until="networkidle") # Wartet, bis Ruhe einkehrt
+        try:
+            # Versuche den "Akzeptieren"-Button zu klicken (ID/Selektor variiert oft)
+            await page.click("text=Akzeptieren", timeout=5000)
+        except:
+            pass # Kein Banner gefunden, mache weiter
+        
         # Warte explizit auf das Wetter-Element
         try:
             await page.wait_for_selector("wo-forecast-hour", timeout=15000)

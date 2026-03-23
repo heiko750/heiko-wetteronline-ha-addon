@@ -12,4 +12,4 @@ RUN pip install --no-cache-dir --break-system-packages -r /tmp/requirements.txt
 COPY scraper.py /app/scraper.py
 
 # Use s6-overlay init system
-CMD ["/init"]
+

@@ -39,7 +39,13 @@ def publish_discovery(hour):
 
 async def scrape():
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        # Pfad zum System-Chromium (unter Debian meist /usr/bin/chromium)
+        browser_path = os.getenv("PLAYWRIGHT_CHROME_EXECUTABLE_PATH", "/usr/bin/chromium")
+        browser = await p.chromium.launch(
+            executable_path=browser_path,
+            headless=True,
+            args=["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+        )
         page = await browser.new_page()
 
         await page.goto(URL, timeout=60000)

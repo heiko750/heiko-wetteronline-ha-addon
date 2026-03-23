@@ -48,7 +48,14 @@ async def scrape():
         )
         page = await browser.new_page()
 
-        await page.goto(URL, timeout=60000)
+        await page.goto(URL, timeout=60000, wait_until="networkidle") # Wartet, bis Ruhe einkehrt
+        # Warte explizit auf das Wetter-Element
+        try:
+            await page.wait_for_selector("wo-forecast-hour", timeout=15000)
+        except:
+            print("Fehler: Wetter-Daten (Stunden-Elemente) wurden nicht gefunden.")
+            # Debug: Mach einen Screenshot, um zu sehen, was der Browser sieht
+            await page.screenshot(path="/config/wetter_debug.png")
 
         hours = page.locator("wo-forecast-hour")
         count = await hours.count()

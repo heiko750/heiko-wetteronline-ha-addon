@@ -49,16 +49,20 @@ async def scrape():
         print(f"STARTE ABFRAGE: {URL}")
         
         try:
-            # Wir warten nur bis das Grundgeruest steht
+            # Wir setzen ein extrem hohes Fenster (3000px), damit die Tabelle Platz hat
+            await page.set_viewport_size({"width": 1280, "height": 3000})
+            
             await page.goto(URL, timeout=60000, wait_until="domcontentloaded")
             
-            # BANNER-KILLER: Wir loeschen alle moeglichen Werbe-Overlays per JS
-            await page.evaluate("() => { document.querySelectorAll('iframe, [class*=\"sp-message\"], [id*=\"sp_message\"]').forEach(el => el.remove()); }")
+            # BANNER-KILLER & SCROLLEN
+            await page.evaluate("() => { document.querySelectorAll('iframe, [id*=\"sp_message\"]').forEach(el => el.remove()); }")
+            print("Simuliere Scrollen für mehr Daten...")
+            await page.mouse.wheel(0, 2000) 
+            await asyncio.sleep(10) # Zeit zum Nachladen geben
             
-            print("Warte auf Shadow-DOM Elemente...")
-            # Hoeherer Timeout fuer den ODROID
+            print("Suche Daten im Shadow-DOM...")
+            # Wir warten darauf, dass die Temperatur-Elemente im HTML hängen
             await page.wait_for_selector(".temperature", state="attached", timeout=60000)
-            await asyncio.sleep(10) # Zeit zum "Atmen" fuer die CPU
             
             data = await page.evaluate("""
                 () => {
@@ -90,8 +94,9 @@ async def scrape():
                 client.connect(MQTT_HOST, 1883, 60)
                 client.loop_start()
                 
-                # Jetzt mit Range 24 fuer den vollen Tag
-                for i in range(min(len(data['hours']), len(data['temps']), 24)):
+                # Wir nehmen jetzt bis zu 24 Paare
+                limit = min(len(data['hours']), len(data['temps']), 24)
+                for i in range(limit):
                     h_name = data['hours'][i]
                     t_val = data['temps'][i]
                     h_id = h_name.replace(":", "")
@@ -104,7 +109,8 @@ async def scrape():
                 client.loop_stop()
                 client.disconnect()
             else:
-                print(f"Daten unvollstaendig: {len(data['hours'])}h / {len(data['temps'])}t")
+                print(f"Daten unvollständig: {len(data['hours'])}h / {len(data['temps'])}t")
+
 
         except Exception as e:
             print(f"FEHLER: {e}")

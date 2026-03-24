@@ -46,8 +46,13 @@ async def scrape():
         print(f"STARTE MITTWOCHS-ABFRAGE: {URL}")
         
         try:
-            # 1. Seite laden
             await page.goto(URL, timeout=60000, wait_until="domcontentloaded")
+            await page.evaluate("() => { document.querySelectorAll('iframe, [id*=\"sp_message\"]').forEach(el => el.remove()); }")
+            
+            # DER SCROLL-TRICK: Einmal 2000 Pixel nach unten fuer mehr Daten
+            print("Simuliere Scrollen für die Mittagswerte...")
+            await page.mouse.wheel(0, 2000) 
+            await asyncio.sleep(10)
             
             # 2. Banner-Killer
             await page.evaluate("() => { document.querySelectorAll('iframe, [id*=\"sp_message\"]').forEach(el => el.remove()); }")

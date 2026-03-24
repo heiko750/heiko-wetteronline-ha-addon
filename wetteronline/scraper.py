@@ -37,56 +37,25 @@ async def scrape():
         
         try:
             await page.goto(URL, timeout=60000, wait_until="domcontentloaded")
-            # Wir loeschen Overlays, damit sie nicht stören
-            await page.evaluate("() => { document.querySelectorAll('iframe, [id*=\"sp_message\"]').forEach(el => el.remove()); }")
-            await page.mouse.wheel(0, 2000) 
-            await asyncio.sleep(10) 
+            print("Seite geladen, starte Text-Analyse...")
+            # Wir geben der Seite Zeit, alle Scripte auszufuehren
+            await asyncio.sleep(15) 
             
-            data = await page.evaluate("""
-                () => {
-                    const findInShadow = (root, selector) => {
-                        let found = Array.from(root.querySelectorAll(selector));
-                        root.querySelectorAll('*').forEach(el => {
-                            if (el.shadowRoot) {
-                                found = found.concat(findInShadow(el.shadowRoot, selector));
-                            }
-                        });
-                        return found;
-                    };
+            # Wir holen uns den reinen Textinhalt der gesamten Seite
+            full_text = await page.evaluate("() => document.body.innerText")
+            
+            # REGEX: Suche nach Uhrzeit (XX:00) und der Zahl direkt danach
+            # Wir suchen: 22:00 (irgendwelche Zeichen/Leerzeilen) Zahl
+            pairs = re.findall(r'(\d{2}:00)\s*\n*\s*(\-?\d+)', full_text)
 
-                    const results = [];
-                    const blocks = findInShadow(document, 'wo-forecast-hour, .forecast-hour');
-                    
-                    blocks.forEach(b => {
-                        const h_el = b.querySelector('wo-date-hour, .date-hour');
-                        // Wir nehmen alle Temperatur-Divs im Block
-                        const t_els = Array.from(b.querySelectorAll('.temperature'));
-                        
-                        // Wir filtern: Nur das Div, das NICHT 'felt-temperature' im Klassennamen hat
-                        // Falls das nicht klappt, nehmen wir einfach das erste (Index 0)
-                        const t_el = t_els.find(el => !el.classList.contains('felt-temperature')) || t_els[0];
-                        
-                        const h = h_el?.textContent?.trim();
-                        const t = t_el?.textContent?.trim().replace(/[^0-9-]/g, '');
-                        
-                        if (h && h.includes(':00') && t) {
-                            results.push({hour: h, temp: t});
-                        }
-                    });
-                    return results;
-                }
-            """)
-
-            if data:
-                print(f"ERFOLG: {len(data)} echte Stunden-Paare gefunden!")
+            if pairs:
+                print(f"ERFOLG: {len(pairs)} Paare im Text gefunden!")
                 client.username_pw_set(MQTT_USER, MQTT_PASS)
                 client.connect(MQTT_HOST, 1883, 60)
                 client.loop_start()
                 
                 seen_hours = set()
-                for entry in data:
-                    h_name = entry['hour']
-                    t_val = entry['temp']
+                for h_name, t_val in pairs:
                     if h_name not in seen_hours and len(seen_hours) < 24:
                         h_id = h_name.replace(":", "")
                         send_discovery(h_id, h_name)
@@ -98,12 +67,12 @@ async def scrape():
                 client.loop_stop()
                 client.disconnect()
             else:
-                print("Keine Daten gefunden. Erstelle Screenshot zur Analyse...")
+                print("Auch im Text nichts gefunden. Erstelle Screenshot...")
                 await page.screenshot(path="/usr/src/app/debug.png")
-
 
         except Exception as e:
             print(f"FEHLER: {e}")
+
         await browser.close()
 
 if __name__ == "__main__":

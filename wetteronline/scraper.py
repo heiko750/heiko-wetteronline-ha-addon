@@ -37,11 +37,11 @@ async def scrape():
         
         try:
             await page.goto(URL, timeout=60000, wait_until="domcontentloaded")
+            # Wir loeschen Overlays, damit sie nicht stören
             await page.evaluate("() => { document.querySelectorAll('iframe, [id*=\"sp_message\"]').forEach(el => el.remove()); }")
             await page.mouse.wheel(0, 2000) 
             await asyncio.sleep(10) 
             
-            # JavaScript Extraktion der echten Stunden-Paare
             data = await page.evaluate("""
                 () => {
                     const findInShadow = (root, selector) => {
@@ -59,7 +59,12 @@ async def scrape():
                     
                     blocks.forEach(b => {
                         const h_el = b.querySelector('wo-date-hour, .date-hour');
-                        const t_el = b.querySelector('.temperature:not(.felt-temperature)');
+                        // Wir nehmen alle Temperatur-Divs im Block
+                        const t_els = Array.from(b.querySelectorAll('.temperature'));
+                        
+                        // Wir filtern: Nur das Div, das NICHT 'felt-temperature' im Klassennamen hat
+                        // Falls das nicht klappt, nehmen wir einfach das erste (Index 0)
+                        const t_el = t_els.find(el => !el.classList.contains('felt-temperature')) || t_els[0];
                         
                         const h = h_el?.textContent?.trim();
                         const t = t_el?.textContent?.trim().replace(/[^0-9-]/g, '');
@@ -93,7 +98,9 @@ async def scrape():
                 client.loop_stop()
                 client.disconnect()
             else:
-                print("Keine Daten gefunden.")
+                print("Keine Daten gefunden. Erstelle Screenshot zur Analyse...")
+                await page.screenshot(path="/usr/src/app/debug.png")
+
 
         except Exception as e:
             print(f"FEHLER: {e}")

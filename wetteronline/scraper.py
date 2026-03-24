@@ -32,38 +32,34 @@ def send_discovery(h_id, h_name):
 
 async def scrape():
     async with async_playwright() as p:
-        # 1. Browser starten
         browser = await p.chromium.launch(
             executable_path="/usr/bin/chromium", 
             headless=True, 
             args=["--no-sandbox", "--disable-setuid-sandbox"]
         )
-        
-        # 2. Kontext erstellen (Hier werden Cookies und Viewport gesetzt)
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             viewport={"width": 1280, "height": 3000}
         )
         
-        # 3. Cookie setzen, um den Banner zu umgehen
-        await context.add_cookies([{
-            "name": "euconsent-v2",
-            "value": "CP-X",
-            "domain": ".wetteronline.de",
-            "path": "/"
-        }])
+        # Cookie setzen (Zustimmung simulieren)
+        await context.add_cookies([{"name": "euconsent-v2", "value": "CP-X", "domain": ".wetteronline.de", "path": "/"}])
         
-        # 4. Seite im Kontext öffnen
         page = await context.new_page()
         print(f"STARTE ABFRAGE: {URL}")
         
         try:
+            # Wir warten nur bis das Grundgeruest steht
             await page.goto(URL, timeout=60000, wait_until="domcontentloaded")
-            print("Warte auf Shadow-DOM Rendering...")
-            await page.wait_for_selector(".temperature", state="attached", timeout=30000)
-            await asyncio.sleep(5) 
             
-            # Dieser JavaScript-Block findet JEDES Element, auch in Shadow-Roots
+            # BANNER-KILLER: Wir loeschen alle moeglichen Werbe-Overlays per JS
+            await page.evaluate("() => { document.querySelectorAll('iframe, [class*=\"sp-message\"], [id*=\"sp_message\"]').forEach(el => el.remove()); }")
+            
+            print("Warte auf Shadow-DOM Elemente...")
+            # Hoeherer Timeout fuer den ODROID
+            await page.wait_for_selector(".temperature", state="attached", timeout=60000)
+            await asyncio.sleep(10) # Zeit zum "Atmen" fuer die CPU
+            
             data = await page.evaluate("""
                 () => {
                     const findInShadow = (root, selector) => {
@@ -78,7 +74,7 @@ async def scrape():
 
                     const hours = findInShadow(document, 'wo-date-hour, .date-hour')
                         .map(el => el.textContent.trim())
-                        .filter(txt => /^\d{2}:00$/.test(txt));
+                        .filter(txt => /^\\d{2}:00$/.test(txt));
                     
                     const temps = findInShadow(document, '.temperature')
                         .map(el => el.textContent.trim().replace(/[^0-9-]/g, ''))
@@ -89,12 +85,12 @@ async def scrape():
             """)
 
             if data['hours'] and data['temps']:
-                print(f"ERFOLG: {len(data['temps'])} Temperaturen aus Shadow-DOM extrahiert!")
+                print(f"ERFOLG: {len(data['temps'])} Temperaturen gefunden!")
                 client.username_pw_set(MQTT_USER, MQTT_PASS)
                 client.connect(MQTT_HOST, 1883, 60)
                 client.loop_start()
                 
-                # Wir nehmen die ersten 16 Paare
+                # Jetzt mit Range 24 fuer den vollen Tag
                 for i in range(min(len(data['hours']), len(data['temps']), 24)):
                     h_name = data['hours'][i]
                     t_val = data['temps'][i]
@@ -108,7 +104,7 @@ async def scrape():
                 client.loop_stop()
                 client.disconnect()
             else:
-                print(f"Daten immer noch verborgen: {len(data['hours'])}h / {len(data['temps'])}t")
+                print(f"Daten unvollstaendig: {len(data['hours'])}h / {len(data['temps'])}t")
 
         except Exception as e:
             print(f"FEHLER: {e}")

@@ -46,21 +46,24 @@ async def scrape():
         print(f"STARTE MITTWOCHS-ABFRAGE: {URL}")
         
         try:
-            # Seite laden
             await page.goto(URL, timeout=60000, wait_until="domcontentloaded")
-            # Banner-Elemente per JS loeschen, falls sie doch auftauchen
-            await page.evaluate("() => { document.querySelectorAll('[id*=\"sp_message\"], iframe').forEach(el => el.remove()); }")
-            
-            print("Seite geladen, erzwinge Rendering der heutigen Daten...")
-            await asyncio.sleep(20) 
+            print("Seite geladen, isoliere Stunden-Bereich...")
+            await asyncio.sleep(15) 
             
             content = await page.content()
             
-            # Wir suchen jede Uhrzeit XX:00 und die NÄCHSTE Zahl danach
-            pairs = re.findall(r'(\d{2}:00).*?>\s*(\-?\d+)\s*<', content, re.DOTALL)
+            # ANKER: Wir suchen erst ab dem Wort "Stündlich"
+            if "Stündlich" in content:
+                # Wir nehmen nur den Teil NACH dem Wort "Stündlich"
+                relevant_content = content.split("Stündlich")
+            else:
+                relevant_content = content
+
+            # Suche nach Paaren im relevanten Bereich
+            pairs = re.findall(r'(\d{2}:00).*?>\s*(\-?\d+)\s*<', relevant_content, re.DOTALL)
 
             if pairs:
-                print(f"ERFOLG: {len(pairs)} Paare für heute gefunden!")
+                print(f"ERFOLG: {len(pairs)} echte Stunden-Paare gefunden!")
                 client.username_pw_set(MQTT_USER, MQTT_PASS)
                 client.connect(MQTT_HOST, 1883, 60)
                 client.loop_start()
@@ -74,7 +77,6 @@ async def scrape():
                         print(f"Gelesen -> {h_name}: {t_val}°C")
                         seen_hours.add(h_name)
                 
-                time.sleep(2)
                 client.loop_stop()
                 client.disconnect()
             else:

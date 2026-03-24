@@ -56,12 +56,17 @@ async def scrape():
         # Zeige den HTML-Inhalt (die ersten 500 Zeichen) im Log
         content = await page.content()
         print(f"DEBUG: HTML-Anfang: {content[:500]}")
-        
+
+        # Warte auf den Cookie-Banner und klicke "ALLES AKZEPTIEREN"
         try:
-            # Versuche den "Akzeptieren"-Button zu klicken (ID/Selektor variiert oft)
-            await page.click("text=Akzeptieren", timeout=5000)
+            # Sourcepoint Banner nutzen oft Iframes
+            await page.wait_for_selector('iframe[title*="SP Consent Message"]', timeout=10000)
+            banner = page.frame_locator('iframe[title*="SP Consent Message"]')
+            await banner.get_by_role("button", name="ALLES AKZEPTIEREN").click()
+            print("Cookie-Banner erfolgreich weggeklickt.")
+            await asyncio.sleep(2) # Kurz warten bis Banner weg ist
         except:
-            pass # Kein Banner gefunden, mache weiter
+            print("Kein Cookie-Banner erschienen oder Pfad hat sich geändert.")
         
         # Warte explizit auf das Wetter-Element
         try:

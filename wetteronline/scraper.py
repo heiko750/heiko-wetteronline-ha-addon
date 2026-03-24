@@ -60,30 +60,40 @@ async def scrape():
         try:
             # Seite laden
             await page.goto(URL, timeout=60000, wait_until="domcontentloaded")
-            print("Warte explizit auf Temperatur-Elemente (Angular Rendering)...")
+            print("Warte auf Rendering der Wetter-Elemente...")
             
-            # WICHTIG: Wir warten, bis mindestens ein Element mit 'temperature' erscheint
-            try:
-                await page.wait_for_selector(".temperature", timeout=30000)
-                print("Elemente gefunden, extrahiere Daten...")
-            except:
-                print("Timeout: Elemente wurden nicht rechtzeitig gerendert.")
-
-            await asyncio.sleep(5) 
-            content = await page.content()
+            # Wir warten, bis die Temperatur-Elemente im Browser existieren
+            await page.wait_for_selector(".temperature", timeout=30000)
+            await asyncio.sleep(2) # Kurze Ruhepause fuer den ODROID
             
-            # DEIN PRÄZISIONS-MUSTER (Extrem flexibel für Leerzeichen)
-            # Findet: >23:00</wo-date-hour> ... class="temperature"> 6
-            pairs = re.findall(r'>(\d{2}:00)</wo-date-hour>.*?class="temperature"[^>]*>\s*(\-?\d+)', content, re.DOTALL)
+            # JAVASCRIPT-EXTRAKTION: Wir fragen den Browser direkt nach den Paaren
+            # Das ist 100% sicher gegen Quelltext-Formatierungsfehler
+            pairs = await page.evaluate("""
+                () => {
+                    const results = [];
+                    // Suche alle Stunden-Blöcke (wo-forecast-hour)
+                    const blocks = document.querySelectorAll('wo-forecast-hour, .forecast-hour');
+                    blocks.forEach(b => {
+                        const h = b.querySelector('wo-date-hour, .date-hour')?.innerText;
+                        const t = b.querySelector('.temperature')?.innerText;
+                        if (h && t) {
+                            results.push({hour: h.trim(), temp: t.trim().replace('°','')});
+                        }
+                    });
+                    return results;
+                }
+            """)
 
             if pairs:
-                print(f"ERFOLG: {len(pairs)} stündliche Paare gefunden!")
+                print(f"ERFOLG: {len(pairs)} saubere Paare direkt extrahiert!")
                 client.username_pw_set(MQTT_USER, MQTT_PASS)
                 client.connect(MQTT_HOST, 1883, 60)
                 client.loop_start()
                 
                 seen_hours = set()
-                for h_name, t_val in pairs:
+                for entry in pairs:
+                    h_name = entry['hour']
+                    t_val = entry['temp']
                     if h_name not in seen_hours and len(seen_hours) < 24:
                         h_id = h_name.replace(":", "")
                         send_discovery(h_id, h_name)
@@ -95,9 +105,7 @@ async def scrape():
                 client.loop_stop()
                 client.disconnect()
             else:
-                print("Muster im Quelltext nicht gefunden. Erstelle Debug-Datei...")
-                with open("/usr/src/app/debug_content.txt", "w") as f:
-                    f.write(content)
+                print("Elemente waren da, aber Inhalt konnte nicht gelesen werden.")
 
         except Exception as e:
             print(f"FEHLER: {e}")

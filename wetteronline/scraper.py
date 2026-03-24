@@ -11,6 +11,8 @@ MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 LOCATION = os.getenv("LOCATION", "grafing")
 INTERVAL = int(os.getenv("INTERVAL", "30")) # Hier war der Fehler!
 
+# Alt: URL = f"https://www.wetteronline.de{LOCATION}"
+# Neu (mit Schrägstrich am Ende der Domain):
 URL = f"https://www.wetteronline.de{LOCATION}"
 
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)

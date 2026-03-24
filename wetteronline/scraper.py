@@ -57,12 +57,14 @@ async def scrape():
                 relevant_content = content
                 print("Anker nicht gefunden, nutze gesamten Quelltext (Vorsicht: evtl. ungenau).")
 
-            # Suche nach Temperaturen im gefilterten Bereich
+            # Suche nach Temperaturen im Bereich nach "Wetter aktuell"
+            # Dein Fund: class="temperature"> 5
             # Muster: class="temperature"> gefolgt von der Zahl
+            # Wir suchen: class="temperature"> gefolgt von (optionalem Leerzeichen) und (Zahl)
             temps = re.findall(r'class="temperature"[^>]*>\s*(\-?\d+)', relevant_content)
 
             if len(temps) >= 16:
-                print(f"ERFOLG: {len(temps)} stündliche Werte gefunden.")
+                print(f"PRÄZISIONS-ERFOLG: {len(temps)} stündliche Werte gefunden.")
                 client.username_pw_set(MQTT_USER, MQTT_PASS)
                 client.connect(MQTT_HOST, 1883, 60)
                 client.loop_start()

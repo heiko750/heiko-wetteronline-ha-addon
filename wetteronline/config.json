@@ -1,38 +1,21 @@
 {
   "name": "WetterOnline Scraper",
-  "version": "1.13.0",
+  "version": "1.13.1",
   "slug": "wetteronline",
-  "description": "Scrapes hourly temperature and cloud/sun data from WetterOnline and publishes via MQTT with auto-discovery.",
+  "description": "Scrapes weather for PV heating control.",
   "startup": "services",
   "boot": "auto",
   "type": "addon",
-  "env": {
-    "PYTHONUNBUFFERED": "1"
-  },
   "init": false,
   "arch": ["amd64", "aarch64"],
   "options": {
     "location": "grafing",
-    "interval": 30,
-    "mqtt_host": "core-mosquitto",
-    "mqtt_port": 1883
-  },
-  "schema": {
-    "location": "str",
-    "interval": "int",
-    "mqtt_host": "str",
-    "mqtt_port": "int"
-  },
-  "options": {
     "mqtt_user": "mqtt-user",
     "mqtt_password": ""
   },
   "schema": {
+    "location": "str",
     "mqtt_user": "str",
     "mqtt_password": "password"
-  },
-  "build_from": {
-    "aarch64": "ghcr.io/home-assistant/aarch64-base-debian-python:3.12",
-    "amd64": "ghcr.io/home-assistant/amd64-base-debian-python:3.12"
   }
 }

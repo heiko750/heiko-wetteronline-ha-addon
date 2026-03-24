@@ -7,11 +7,12 @@ from datetime import datetime
 from playwright.async_api import async_playwright
 import paho.mqtt.client as mqtt
 
-# Diese Werte holt sich das Add-on aus deiner config.json / UI
 MQTT_HOST = "172.30.32.1"
+# Diese Werte holt sich das Add-on aus deiner config.json / UI
+LOCATION = os.getenv("LOCATION", "grafing")
 MQTT_USER = os.getenv("MQTT_USER")
 MQTT_PASS = os.getenv("MQTT_PASSWORD")
-LOCATION = os.getenv("LOCATION", "grafing")
+
 URL = f"https://www.wetteronline.de{LOCATION.lstrip('/')}"
 
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)

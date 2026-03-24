@@ -95,7 +95,7 @@ async def scrape():
                 client.loop_start()
                 
                 # Wir nehmen die ersten 16 Paare
-                for i in range(min(len(data['hours']), len(data['temps']), 16)):
+                for i in range(min(len(data['hours']), len(data['temps']), 24)):
                     h_name = data['hours'][i]
                     t_val = data['temps'][i]
                     h_id = h_name.replace(":", "")

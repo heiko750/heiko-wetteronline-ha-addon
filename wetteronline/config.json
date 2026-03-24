@@ -23,6 +23,14 @@
     "mqtt_host": "str",
     "mqtt_port": "int"
   },
+  "options": {
+    "mqtt_user": "mqtt-user",
+    "mqtt_password": ""
+  },
+  "schema": {
+    "mqtt_user": "str",
+    "mqtt_password": "password"
+  },
   "build_from": {
     "aarch64": "ghcr.io/home-assistant/aarch64-base-debian-python:3.12",
     "amd64": "ghcr.io/home-assistant/amd64-base-debian-python:3.12"

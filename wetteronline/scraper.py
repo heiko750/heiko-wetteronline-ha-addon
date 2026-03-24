@@ -40,14 +40,17 @@ async def scrape():
         print(f"STARTE ABFRAGE: {URL}")
 
         try:
-            await page.goto(URL, timeout=60000, wait_until="networkidle")
-            # Wir geben der Seite extra Zeit, um JavaScript-Inhalte zu laden
+            # Wir warten NICHT mehr auf networkidle, sondern nur auf das HTML-Gerüst
+            await page.goto(URL, timeout=60000, wait_until="domcontentloaded")
+            
+            # Wir geben der Seite 10 Sekunden Zeit zum "Atmen" und Rendern
+            print("Seite geladen, warte auf Daten-Rendering...")
             await asyncio.sleep(10) 
+            
             content = await page.content()
             
             # Wir suchen nach JEDER Uhrzeit XX:00 und der NÄCHSTEN Zahl danach.
-            # Das ist extrem robust, da wir keine Klassennamen (wie temperature) mehr brauchen.
-            # Wir suchen: (Uhrzeit) - (beliebige Zeichen) - (Zahl zwischen > und <)
+            # Muster: Uhrzeit -> irgendwas -> > (Leerzeichen) Zahl (Leerzeichen) <
             pairs = re.findall(r'(\d{2}:00).*?>\s*(\-?\d+)\s*<', content, re.DOTALL)
 
             if pairs:
@@ -59,19 +62,20 @@ async def scrape():
                 seen_hours = set()
                 for h_name, t_val in pairs:
                     if h_name not in seen_hours and len(seen_hours) < 24:
-                        # Plausibilitaetscheck: Temperaturen im Maerz meist zwischen -15 und +25
                         temp_int = int(t_val)
-                        if -20 < temp_int < 40:
+                        # Nur plausible Temperaturen nehmen
+                        if -25 < temp_int < 45:
                             h_id = h_name.replace(":", "")
                             send_discovery(h_id, h_name)
                             client.publish(f"wetteronline/hourly/{h_id}/temp", t_val, retain=True)
                             print(f"Gelesen -> {h_name}: {t_val}°C")
                             seen_hours.add(h_name)
                 
+                time.sleep(2)
                 client.loop_stop()
                 client.disconnect()
             else:
-                print("Auch im Rohtext nichts gefunden. Erstelle Screenshot zur Analyse...")
+                print("Keine Daten im Text gefunden. Erstelle Screenshot zur Analyse...")
                 await page.screenshot(path="/usr/src/app/debug.png")
 
         except Exception as e:

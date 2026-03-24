@@ -14,7 +14,7 @@ MQTT_PASS = os.getenv("MQTT_PASSWORD")
 LOCATION = os.getenv("LOCATION", "grafing")
 
 # URL sicher zusammenbauen
-URL = f"https://www.wetteronline.de{LOCATION.strip('/')}"
+URL = f"https://www.wetteronline.de/wetter/{LOCATION.strip('/')}"
 
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 

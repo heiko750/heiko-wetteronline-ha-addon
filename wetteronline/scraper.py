@@ -31,23 +31,17 @@ def send_discovery(h_id, h_name):
 async def scrape():
     async with async_playwright() as p:
         browser = await p.chromium.launch(executable_path="/usr/bin/chromium", headless=True, args=["--no-sandbox"])
-        # Kontext erstellen
-        context = await browser.new_context(viewport={"width": 1280, "height": 5000})
-        
-        # DER TRICK: Wir setzen den "Zustimmungs-Status" manuell
-        await context.add_cookies([{
-            "name": "euconsent-v2",
-            "value": "CP-X-NAP-X-NAAABAAAENAAAAAAA-AAAAAAA.YAAAAAAAAAAA",
-            "domain": ".wetteronline.de",
-            "path": "/"
-        }])
-        
+        # RIESIGES Fenster setzen (3000 Pixel hoch!)
+        context = await browser.new_context(viewport={"width": 1280, "height": 3000})
         page = await context.new_page()
-        print(f"STARTE MITTWOCHS-ABFRAGE: {URL}")
         
         try:
             await page.goto(URL, timeout=60000, wait_until="domcontentloaded")
+            # Banner entfernen
             await page.evaluate("() => { document.querySelectorAll('iframe, [id*=\"sp_message\"]').forEach(el => el.remove()); }")
+            
+            print("Riesen-Fenster aktiv. Suche alle 24 Stunden...")
+            await asyncio.sleep(15)
             
             # DER SCROLL-TRICK: Einmal 2000 Pixel nach unten fuer mehr Daten
             print("Simuliere Scrollen für die Mittagswerte...")

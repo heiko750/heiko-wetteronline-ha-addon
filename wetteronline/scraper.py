@@ -7,6 +7,7 @@ import os
 MQTT_HOST = os.getenv("MQTT_HOST", "core-mosquitto")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 LOCATION = os.getenv("LOCATION", "grafing")
+INTERVAL = int(os.getenv("INTERVAL", "30")) # Standard 30 Minuten
 
 URL = f"https://www.wetteronline.de/wetter/{LOCATION}"
 

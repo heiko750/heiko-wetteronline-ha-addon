@@ -33,11 +33,7 @@ async def scrape():
         browser = await p.chromium.launch(executable_path="/usr/bin/chromium", headless=True, args=["--no-sandbox"])
         page = await browser.new_page()
         print(f"STARTE PRÄZISIONS-ABFRAGE: {URL}")
-        try:
-            await page.goto(URL, timeout=60000, wait_until="domcontentloaded")
-            await asyncio.sleep(5)
-            content = await page.content()
-            
+          
             # DEIN MUSTER: Uhrzeit gefolgt von Temperatur
             # Beispiel: >21:00</wo-date-hour> ... class="temperature"> 5
             # [^>]* greift die dynamischen IDs ab, (\-?\d+) die Temperaturzahl

@@ -60,24 +60,26 @@ async def scrape():
         try:
             # Seite laden
             await page.goto(URL, timeout=60000, wait_until="domcontentloaded")
-            print("Warte auf Rendering der Wetter-Elemente...")
+            print("Warte auf Wetter-Elemente im Hintergrund...")
             
-            # Wir warten, bis die Temperatur-Elemente im Browser existieren
-            await page.wait_for_selector(".temperature", timeout=30000)
-            await asyncio.sleep(2) # Kurze Ruhepause fuer den ODROID
+            # Wir warten nur darauf, dass die Elemente im HTML vorhanden sind (nicht zwingend sichtbar)
+            await page.wait_for_selector(".temperature", state="attached", timeout=30000)
+            await asyncio.sleep(5) 
             
-            # JAVASCRIPT-EXTRAKTION: Wir fragen den Browser direkt nach den Paaren
-            # Das ist 100% sicher gegen Quelltext-Formatierungsfehler
+            # JAVASCRIPT-EXTRAKTION: Wir lesen JEDES Element mit 'temperature'
             pairs = await page.evaluate("""
                 () => {
                     const results = [];
-                    // Suche alle Stunden-Blöcke (wo-forecast-hour)
+                    // Suche alle Stunden-Blöcke
                     const blocks = document.querySelectorAll('wo-forecast-hour, .forecast-hour');
                     blocks.forEach(b => {
-                        const h = b.querySelector('wo-date-hour, .date-hour')?.innerText;
-                        const t = b.querySelector('.temperature')?.innerText;
+                        const h = b.querySelector('wo-date-hour, .date-hour')?.textContent;
+                        const t = b.querySelector('.temperature')?.textContent;
                         if (h && t) {
-                            results.push({hour: h.trim(), temp: t.trim().replace('°','')});
+                            results.push({
+                                hour: h.trim(), 
+                                temp: t.trim().replace(/[^0-9-]/g, '') // Nur Zahlen und Minuszeichen
+                            });
                         }
                     });
                     return results;
@@ -85,7 +87,7 @@ async def scrape():
             """)
 
             if pairs:
-                print(f"ERFOLG: {len(pairs)} saubere Paare direkt extrahiert!")
+                print(f"ERFOLG: {len(pairs)} Paare extrahiert!")
                 client.username_pw_set(MQTT_USER, MQTT_PASS)
                 client.connect(MQTT_HOST, 1883, 60)
                 client.loop_start()
@@ -94,7 +96,8 @@ async def scrape():
                 for entry in pairs:
                     h_name = entry['hour']
                     t_val = entry['temp']
-                    if h_name not in seen_hours and len(seen_hours) < 24:
+                    # Validierung: Stunde muss XX:00 Format haben und Temp eine Zahl sein
+                    if ":" in h_name and t_val and h_name not in seen_hours:
                         h_id = h_name.replace(":", "")
                         send_discovery(h_id, h_name)
                         client.publish(f"wetteronline/hourly/{h_id}/temp", t_val, retain=True)
@@ -105,7 +108,7 @@ async def scrape():
                 client.loop_stop()
                 client.disconnect()
             else:
-                print("Elemente waren da, aber Inhalt konnte nicht gelesen werden.")
+                print("Keine Daten in den gefundenen Elementen.")
 
         except Exception as e:
             print(f"FEHLER: {e}")

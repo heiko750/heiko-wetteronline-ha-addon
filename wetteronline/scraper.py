@@ -49,21 +49,15 @@ async def scrape():
         print(f"STARTE ABFRAGE: {URL}")
         
         try:
-            # Wir setzen ein extrem hohes Fenster (3000px), damit die Tabelle Platz hat
             await page.set_viewport_size({"width": 1280, "height": 3000})
-            
             await page.goto(URL, timeout=60000, wait_until="domcontentloaded")
             
             # BANNER-KILLER & SCROLLEN
             await page.evaluate("() => { document.querySelectorAll('iframe, [id*=\"sp_message\"]').forEach(el => el.remove()); }")
-            print("Simuliere Scrollen für mehr Daten...")
             await page.mouse.wheel(0, 2000) 
-            await asyncio.sleep(10) # Zeit zum Nachladen geben
+            await asyncio.sleep(10) 
             
-            print("Suche Daten im Shadow-DOM...")
-            # Wir warten darauf, dass die Temperatur-Elemente im HTML hängen
-            await page.wait_for_selector(".temperature", state="attached", timeout=60000)
-            
+            # JAVASCRIPT-EXTRAKTION MIT ANKER
             data = await page.evaluate("""
                 () => {
                     const findInShadow = (root, selector) => {
@@ -76,33 +70,39 @@ async def scrape():
                         return found;
                     };
 
-                    const hours = findInShadow(document, 'wo-date-hour, .date-hour')
-                        .map(el => el.textContent.trim())
-                        .filter(txt => /^\\d{2}:00$/.test(txt));
+                    // Wir suchen den Bereich, der die STÜNDLICHE Vorhersage enthält
+                    // Alles vor dem Wort "Stündlich" im Textinhalt wird ignoriert
+                    const bodyText = document.body.innerText;
+                    const hourlyIndex = bodyText.indexOf("Stündlich");
                     
                     const temps = findInShadow(document, '.temperature')
+                        .filter(el => {
+                            // Nur Temperaturen nehmen, die NACH dem Wort "Stündlich" im DOM kommen
+                            return el.compareDocumentPosition(document.body) & Node.DOCUMENT_POSITION_PRECEDING;
+                        })
                         .map(el => el.textContent.trim().replace(/[^0-9-]/g, ''))
                         .filter(txt => txt !== '');
                         
-                    return { hours, temps };
+                    return { temps };
                 }
             """)
 
             if data['temps']:
-                print(f"ERFOLG: {len(data['temps'])} Temperaturen im Speicher!")
+                # FALLBACK: Falls der DOM-Filter zu komplex ist, nehmen wir die Liste 
+                # und ueberspringen die ersten 14 Werte (den 14-Tage Trend)
+                real_temps = data['temps'][14:] if len(data['temps']) > 30 else data['temps']
+                
+                print(f"ERFOLG: {len(real_temps)} echte Stundenwerte nach Filter!")
                 client.username_pw_set(MQTT_USER, MQTT_PASS)
                 client.connect(MQTT_HOST, 1883, 60)
                 client.loop_start()
                 
-                # Wir nehmen die aktuelle Stunde als Startpunkt
                 start_hour = datetime.now().hour
-                
-                # Wir verarbeiten die nächsten 24 Stunden, egal ob 'hours' gefunden wurde
-                for i in range(min(len(data['temps']), 24)):
+                for i in range(min(len(real_temps), 24)):
                     current_h = (start_hour + i) % 24
                     h_name = f"{current_h:02d}:00"
                     h_id = f"{current_h:02d}00"
-                    t_val = data['temps'][i]
+                    t_val = real_temps[i]
                     
                     send_discovery(h_id, h_name)
                     client.publish(f"wetteronline/hourly/{h_id}/temp", t_val, retain=True)

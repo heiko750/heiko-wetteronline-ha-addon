@@ -46,41 +46,55 @@ async def scrape():
         print(f"STARTE MITTWOCHS-ABFRAGE: {URL}")
         
         try:
+            # Seite laden
             await page.goto(URL, timeout=60000, wait_until="domcontentloaded")
-            print("Seite geladen, isoliere Stunden-Bereich...")
-            await asyncio.sleep(15) 
             
-            content = await page.content()
+            # BANNER-KILLER: Wir loeschen alle Overlays radikal per JavaScript
+            await page.evaluate("""() => {
+                document.querySelectorAll('iframe, [id*="sp_message"], [class*="sp-message"]').forEach(el => el.remove());
+                document.body.style.overflow = 'visible';
+            }""")
             
-            # ANKER: Wir suchen erst ab dem Wort "Stündlich"
-            if "Stündlich" in content:
-                # Wir nehmen nur den Teil NACH dem Wort "Stündlich"
-                relevant_content = content.split("Stündlich")
-            else:
-                relevant_content = content
+            print("Banner entfernt. Suche stündliche Daten...")
+            await asyncio.sleep(10) 
+            
+            # Wir nutzen JavaScript, um die Daten direkt aus den Elementen zu ziehen
+            # Das umgeht den fehleranfaelligen Quelltext-Scan
+            data = await page.evaluate("""
+                () => {
+                    const results = [];
+                    const nodes = document.querySelectorAll('wo-forecast-hour, .forecast-hour');
+                    nodes.forEach(n => {
+                        const h = n.querySelector('wo-date-hour, .date-hour')?.innerText;
+                        const t = n.querySelector('.temperature')?.innerText;
+                        if(h && t) results.push({h: h.trim(), t: t.replace('°','').trim()});
+                    });
+                    return results;
+                }
+            """)
 
-            # Suche nach Paaren im relevanten Bereich
-            pairs = re.findall(r'(\d{2}:00).*?>\s*(\-?\d+)\s*<', relevant_content, re.DOTALL)
-
-            if pairs:
-                print(f"ERFOLG: {len(pairs)} echte Stunden-Paare gefunden!")
+            if data:
+                print(f"ERFOLG: {len(data)} echte Stunden-Paare gefunden!")
                 client.username_pw_set(MQTT_USER, MQTT_PASS)
                 client.connect(MQTT_HOST, 1883, 60)
                 client.loop_start()
                 
                 seen_hours = set()
-                for h_name, t_val in pairs:
+                for entry in data:
+                    h_name = entry['h']
+                    t_val = entry['t']
                     if h_name not in seen_hours and len(seen_hours) < 24:
                         h_id = h_name.replace(":", "")
                         send_discovery(h_id, h_name)
                         client.publish(f"wetteronline/hourly/{h_id}/temp", t_val, retain=True)
-                        print(f"Gelesen -> {h_name}: {t_val}°C")
+                        print(f"Update -> {h_name}: {t_val}°C")
                         seen_hours.add(h_name)
                 
                 client.loop_stop()
                 client.disconnect()
             else:
-                print("Immer noch keine neuen Stunden-Daten. Seite im Cache?")
+                print("Immer noch keine neuen Daten. Versuche Screenshot...")
+                await page.screenshot(path="/usr/src/app/debug.png")
 
         except Exception as e:
             print(f"FEHLER: {e}")

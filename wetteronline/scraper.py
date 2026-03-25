@@ -51,13 +51,22 @@ async def scrape():
                         const t = b.querySelector('.temperature:not(.felt-temperature)')?.textContent?.trim().replace(/[^0-9-]/g, '');
                         const c = b.querySelector('img.symbol')?.getAttribute('alt')?.trim();
                         
-                        // VERBESSERTER WIND-SCAN:
-                        // Wir suchen nach Elementen mit 'wind' in der Klasse und extrahieren die erste Zahl
-                        const windEl = b.querySelector('[class*="wind"]');
-                        let w = windEl?.textContent?.trim().match(/\\d+/); 
-                        w = w ? w[0] : "0"; // Falls kein Wind da ist, setzen wir 0 statt None
+                        // WIND-ICON SCAN: Wir suchen nach den speziellen SVGs in den Bilder-Pfaden
+                        const images = Array.from(b.querySelectorAll('img'));
+                        let w = "Ruhig"; // Standardwert
+                        
+                        images.forEach(img => {
+                            const src = img.getAttribute('src') || "";
+                            if (src.includes('ic_heavy_wind')) {
+                                w = "Sturm";
+                            } else if (src.includes('ic_wind') && w !== "Sturm") {
+                                w = "Windig";
+                            }
+                        });
 
-                        if (h && h.includes(':00')) results.push({hour: h, temp: t, condition: c, wind: w});
+                        if (h && h.includes(':00')) {
+                            results.push({hour: h, temp: t, condition: c, wind: w});
+                        }
                     });
                     return results;
                 }

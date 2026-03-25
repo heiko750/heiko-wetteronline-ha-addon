@@ -50,7 +50,13 @@ async def scrape():
                         const h = b.querySelector('wo-date-hour, .date-hour')?.textContent?.trim();
                         const t = b.querySelector('.temperature:not(.felt-temperature)')?.textContent?.trim().replace(/[^0-9-]/g, '');
                         const c = b.querySelector('img.symbol')?.getAttribute('alt')?.trim();
-                        const w = b.querySelector('.wind-speed')?.textContent?.trim().replace(/[^0-9]/g, '');
+                        
+                        // VERBESSERTER WIND-SCAN:
+                        // Wir suchen nach Elementen mit 'wind' in der Klasse und extrahieren die erste Zahl
+                        const windEl = b.querySelector('[class*="wind"]');
+                        let w = windEl?.textContent?.trim().match(/\\d+/); 
+                        w = w ? w[0] : "0"; // Falls kein Wind da ist, setzen wir 0 statt None
+
                         if (h && h.includes(':00')) results.push({hour: h, temp: t, condition: c, wind: w});
                     });
                     return results;

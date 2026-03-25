@@ -7,7 +7,7 @@ from datetime import datetime
 from playwright.async_api import async_playwright
 import paho.mqtt.client as mqtt
 
-# Konfiguration
+# --- KONFIGURATION ---
 MQTT_HOST = "172.30.32.1"
 MQTT_USER = os.getenv("MQTT_USER", "mqtt-user")
 MQTT_PASS = os.getenv("MQTT_PASSWORD")
@@ -17,12 +17,12 @@ URL = f"https://www.wetteronline.de/wetter/{LOCATION.strip('/')}"
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 
 def send_discovery(h_id, h_name):
-    topic = f"homeassistant/sensor/wo_{h_id}/config"
+    topic = f"homeassistant/sensor/wo_{h_id}_temp/config"
     payload = {
-        "name": f"WO {h_name}",
+        "name": f"WO {h_name} Temp",
         "state_topic": f"wetteronline/hourly/{h_id}/temp",
         "unit_of_measurement": "°C",
-        "unique_id": f"wo_t_{h_id}",
+        "unique_id": f"wo_temp_{h_id}",
         "device_class": "temperature",
         "state_class": "measurement"
     }
@@ -30,54 +30,35 @@ def send_discovery(h_id, h_name):
 
 async def scrape():
     async with async_playwright() as p:
-        browser = await p.chromium.launch(executable_path="/usr/bin/chromium", headless=True, args=["--no-sandbox"])
-        # RIESIGES Fenster setzen (3000 Pixel hoch!)
-        context = await browser.new_context(viewport={"width": 1280, "height": 3000})
+        # Browser mit RIESEN-Fenster fuer alle Stunden
+        browser = await p.chromium.launch(executable_path="/usr/bin/chromium", headless=True, args=["--no-sandbox", "--disable-gpu"])
+        context = await browser.new_context(viewport={"width": 1280, "height": 5000})
         page = await context.new_page()
         
+        print(f"STARTE ABFRAGE: {URL}")
         try:
             await page.goto(URL, timeout=60000, wait_until="domcontentloaded")
-            # Banner entfernen
+            # Banner-Killer
             await page.evaluate("() => { document.querySelectorAll('iframe, [id*=\"sp_message\"]').forEach(el => el.remove()); }")
+            print("Seite geladen, warte auf Rendering...")
+            await asyncio.sleep(15) # Wichtig fuer ODROID Performance
             
-            print("Riesen-Fenster aktiv. Suche alle 24 Stunden...")
-            await asyncio.sleep(15)
-            
-            # DER SCROLL-TRICK: Einmal 2000 Pixel nach unten fuer mehr Daten
-            print("Simuliere Scrollen für die Mittagswerte...")
-            await page.mouse.wheel(0, 2000) 
-            await asyncio.sleep(10)
-            
-            # 2. Banner-Killer
-            await page.evaluate("() => { document.querySelectorAll('iframe, [id*=\"sp_message\"]').forEach(el => el.remove()); }")
-            print("Warte auf Shadow-DOM Inhalte...")
-            await asyncio.sleep(15) 
-
-            # 3. SHADOW-DOM BYPASS (Der entscheidende Teil)
+            # Shadow-DOM Extraktion
             data = await page.evaluate("""
                 () => {
-                    const results = [];
-                    // Diese Funktion taucht tief in die versteckten Shadow-Roots ab
                     const findInShadow = (root, selector) => {
                         let found = Array.from(root.querySelectorAll(selector));
                         root.querySelectorAll('*').forEach(el => {
-                            if (el.shadowRoot) {
-                                found = found.concat(findInShadow(el.shadowRoot, selector));
-                            }
+                            if (el.shadowRoot) found = found.concat(findInShadow(el.shadowRoot, selector));
                         });
                         return found;
                     };
-
+                    const results = [];
                     const blocks = findInShadow(document, 'wo-forecast-hour, .forecast-hour');
                     blocks.forEach(b => {
-                        const h = b.querySelector('wo-date-hour, .date-hour')?.textContent;
-                        const t = b.querySelector('.temperature')?.textContent;
-                        if (h && t) {
-                            results.push({
-                                hour: h.trim(), 
-                                temp: t.trim().replace(/[^0-9-]/g, '')
-                            });
-                        }
+                        const h = b.querySelector('wo-date-hour, .date-hour')?.textContent?.trim();
+                        const t = b.querySelector('.temperature:not(.felt-temperature)')?.textContent?.trim().replace(/[^0-9-]/g, '');
+                        if (h && h.includes(':00') && t) results.push({hour: h, temp: t});
                     });
                     return results;
                 }
@@ -85,6 +66,7 @@ async def scrape():
 
             if data:
                 print(f"ERFOLG: {len(data)} echte Stunden-Paare gefunden!")
+                # MQTT VERBINDUNG JETZT
                 client.username_pw_set(MQTT_USER, MQTT_PASS)
                 client.connect(MQTT_HOST, 1883, 60)
                 client.loop_start()
@@ -97,24 +79,23 @@ async def scrape():
                         h_id = h_name.replace(":", "")
                         send_discovery(h_id, h_name)
                         client.publish(f"wetteronline/hourly/{h_id}/temp", t_val, retain=True)
-                        print(f"Gelesen -> {h_name}: {t_val}°C")
+                        print(f"MQTT SEND -> {h_name}: {t_val}°C")
                         seen_hours.add(h_name)
                 
                 time.sleep(2)
                 client.loop_stop()
                 client.disconnect()
+                print("MQTT DATEN ÜBERTRAGEN.")
             else:
-                print("Daten immer noch im Shadow-DOM gesperrt.")
+                print("Keine Wetter-Paare gefunden. Checke Quelltext...")
 
         except Exception as e:
             print(f"FEHLER: {e}")
-
         await browser.close()
-
-
 
 if __name__ == "__main__":
     while True:
         asyncio.run(scrape())
         print("Warte 30 Minuten...")
         time.sleep(1800)
+

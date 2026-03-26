@@ -8,9 +8,11 @@ This Repository contains the Home Assistant Add-on "WetterOnline Scraper".
 
 The Add-on, optimized for ODROID-N2+ / HA Blue, scrapes from wetteronline the temperature, weather condition as well as wind for the next 24 hours and makes them available as entities via MQTT. Check the Wiki/Examples for the **ApexCharts-Card** YAML configuration to visualize the 24h temperature fever curve and wind staircases.
 
-The scraper uses Playwright to penetrate the Shadow-DOM layers and dynamic Angular components of WetterOnline, which are typically invisible to standard scrapers."
+The scraper uses Playwright to penetrate the Shadow-DOM layers and dynamic Angular components of WetterOnline, which are typically invisible to standard scrapers.
 
-In case you install this Add-on and notice problems:
+**Installation:** via Add-on store by adding the link to github repository (3 dots upper right corner)
+
+If you install this Add-on and notice problems:
 - **1:** check, whether you added in the config of the Add-on your MQTT user name and password as well as location 
 - **2:** for debugging see following lines:
 ### Debugging & Manual Test

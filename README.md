@@ -14,7 +14,7 @@ The scraper uses Playwright to penetrate the Shadow-DOM layers and dynamic Angul
 
 If you install this Add-on and notice problems:
 - **1:** check, whether you added in the config of the Add-on your MQTT user name and password as well as location 
-- **2:** for debugging see following lines:
+- **2:** for debugging see following lines
 ### Debugging & Manual Test
 If you notice missing entities or values, run the following command in the **Advanced SSH & Web Terminal** (logged in as root via port 22):
 ```bash

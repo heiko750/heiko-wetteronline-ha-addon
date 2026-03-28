@@ -68,8 +68,8 @@
               color: red
               label: Now
             series:
-              # 1a dieser Sensor liefert NUR den Wert für den Header (13:00 Uhr = 7°C)
-              - entity: sensor.wo_13_00_temp
+              # 1a der Temperatur-Sensor meiner Wetterstation liefert den Wert für den Header
+              - entity: sensor.measured_temperature_of_your_location
                 name: "Temperatur"
                 show:
                   in_header: true

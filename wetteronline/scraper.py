@@ -8,7 +8,7 @@ MQTT_HOST = "core-mosquitto"
 MQTT_USER = os.getenv("MQTT_USER", "mqtt-user")
 MQTT_PASS = os.getenv("MQTT_PASSWORD")
 LOCATION = os.getenv("LOCATION", "grafing")
-URL = f"https://wetteronline.de/wetter/{LOCATION.strip('/')}"
+URL = f"https://www.wetteronline.de/wetter/{LOCATION.strip('/')}"
 
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 
@@ -26,67 +26,88 @@ def send_discovery(h_id, h_name, sensor_type, unit, icon):
 
 async def scrape():
     async with async_playwright() as p:
+        # Browser mit explizitem Pfad für HA-Addon
         browser = await p.chromium.launch(executable_path="/usr/bin/chromium", headless=True, args=["--no-sandbox", "--disable-gpu"])
         context = await browser.new_context(viewport={"width": 1280, "height": 3000})
         page = await context.new_page()
         
         print(f"STARTE SCAN: {URL}")
         try:
-            # 1. Seite laden (domcontentloaded ist schneller und stabiler bei Werbung)
+            # 1. Seite laden
             await page.goto(URL, timeout=60000, wait_until="domcontentloaded")
-            await asyncio.sleep(5) # Warten auf Scripte
+            await asyncio.sleep(5)
 
-            # 2. COOKIE-BANNER WEGKLICKEN (WICHTIG!)
-            # Wir suchen nach dem typischen "Zustimmen" oder "Akzeptieren" Button
-            cookie_selectors = ["button:has-text('Akzeptieren')", "button:has-text('Zustimmen')", ".cmp-button_accept"]
-            for sel in cookie_selectors:
-                btn = page.locator(sel)
-                if await btn.count() > 0:
+            # 2. Cookie-Banner wegschalten (verschiedene Methoden)
+            try:
+                # Wir suchen Buttons mit Text "Akzeptieren" oder "Zustimmen"
+                accept_btn = page.get_by_role("button", name=re.compile(r"Akzeptieren|Zustimmen|Alle akzeptieren", re.IGNORECASE))
+                if await accept_btn.count() > 0:
                     print("Cookie-Banner erkannt. Klicke 'Akzeptieren'...")
-                    await btn.first.click()
+                    await accept_btn.first.click()
                     await asyncio.sleep(2)
-                    break
+            except: pass
 
-            # 3. PFEIL-BUTTON FINDEN UND 17x KLICKEN
-            # Wir nutzen einen flexiblen Selektor fuer den rechten Pfeil
-            arrow = page.locator(".hourly-forecast-container .arrow-right, .forecast-hourly .arrow-right, .arrow-right").first
+            # 3. Pfeil-Button für die 24h-Ansicht finden
+            # WetterOnline nutzt oft ein Element mit einem SVG-Pfeil nach rechts
+            # Wir probieren erst den klassischen CSS-Weg, dann eine Suche nach dem Icon
+            arrow = page.locator(".hourly-forecast-container .arrow-right, .forecast-hourly .arrow-right, [class*='arrow-right']").first
             
+            if await arrow.count() == 0:
+                # Fallback: Suche nach dem SVG oder einem Button im Stunden-Bereich
+                arrow = page.locator("div[class*='hourly'] .arrow-right, div[class*='hourly'] svg").last
+
             if await arrow.count() > 0:
                 print("Stunden-Pfeil gefunden. Starte 17 Klicks für 24h-Daten...")
                 for k in range(17):
-                    if await arrow.is_visible():
-                        await arrow.click()
-                        await asyncio.sleep(0.6) # Animation abwarten
+                    try:
+                        if await arrow.is_visible():
+                            await arrow.click()
+                            await asyncio.sleep(0.5)
+                    except: break
                 print("Klicks beendet.")
             else:
-                print("HINWEIS: Kein Pfeil gefunden. Scrape nur sichtbare Daten.")
+                print("HINWEIS: Kein Pfeil gefunden. Versuche Daten direkt zu lesen.")
 
-            # 4. DATEN AUSLESEN PER EVALUATE
+            # 4. Daten auslesen
+            # Wir suchen jetzt breiter nach den Stunden-Items
             data = await page.evaluate("""
                 () => {
                     const results = [];
-                    // Suche alle Stunden-Blöcke (auch die neu reingeschobenen)
-                    const blocks = Array.from(document.querySelectorAll('wo-forecast-hour, .forecast-hour, .hourly-forecast-item'));
-                    
-                    blocks.forEach(b => {
-                        const h = b.querySelector('wo-date-hour, .date-hour')?.textContent?.trim();
-                        const t = b.querySelector('.temperature:not(.felt-temperature)')?.textContent?.trim().replace(/[^0-9-]/g, '');
-                        const c = b.querySelector('img.symbol')?.getAttribute('alt')?.trim() || "Unbekannt";
-                        
-                        // Wind-Check
-                        const images = Array.from(b.querySelectorAll('img'));
-                        let w = "Ruhig";
-                        images.forEach(img => {
-                            const src = img.getAttribute('src') || "";
-                            if (src.includes('ic_heavy_wind')) w = "Sturm";
-                            else if (src.includes('ic_wind') && w !== "Sturm") w = "Windig";
-                        });
+                    // Wir suchen alle Elemente, die nach Uhrzeit (XX:00) aussehen
+                    const allElements = Array.from(document.querySelectorAll('*'));
+                    const hourBlocks = allElements.filter(el => {
+                        const txt = el.textContent?.trim() || "";
+                        return /^[0-2][0-9]:00$/.test(txt) && el.children.length === 0;
+                    }).map(el => el.closest('div, wo-forecast-hour, .forecast-hour, .hourly-forecast-item')).filter(Boolean);
 
-                        if (h && h.includes(':00')) {
-                            // Dubletten verhindern
-                            if (!results.find(item => item.hour === h)) {
-                                results.push({hour: h, temp: t, condition: c, wind: w});
-                            }
+                    // Dubletten entfernen (nach Stunden-Text)
+                    const uniqueBlocks = [];
+                    const seenHours = new Set();
+                    
+                    hourBlocks.forEach(b => {
+                        const h = b.innerText.match(/[0-2][0-9]:00/)?.[0];
+                        if (h && !seenHours.has(h)) {
+                            seenHours.add(h);
+                            uniqueBlocks.push(b);
+                        }
+                    });
+
+                    uniqueBlocks.forEach(b => {
+                        const h = b.innerText.match(/[0-2][0-9]:00/)?.[0];
+                        // Temperatur finden: Erste Zahl im Block, die nicht die Uhrzeit ist
+                        const tempMatch = b.innerText.match(/(-?\\d+)°/);
+                        const t = tempMatch ? tempMatch[1] : null;
+                        
+                        // Condition (Icon-Alt-Text)
+                        const c = b.querySelector('img')?.getAttribute('alt')?.trim() || "Unbekannt";
+                        
+                        // Wind
+                        let w = "Ruhig";
+                        if (b.innerHTML.includes('ic_heavy_wind')) w = "Sturm";
+                        else if (b.innerHTML.includes('ic_wind')) w = "Windig";
+
+                        if (h && t) {
+                            results.push({hour: h, temp: t, condition: c, wind: w});
                         }
                     });
                     return results;
@@ -99,7 +120,6 @@ async def scrape():
                 client.connect(MQTT_HOST, 1883, 60)
                 client.loop_start()
 
-                # Sende bis zu 24 Stunden
                 for entry in data[:24]:
                     h_id = entry['hour'].replace(":", "")
                     send_discovery(h_id, entry['hour'], "temp", "°C", "mdi:thermometer")
@@ -110,22 +130,19 @@ async def scrape():
                     client.publish(f"wetteronline/hourly/{h_id}/condition", entry['condition'], retain=True)
                     client.publish(f"wetteronline/hourly/{h_id}/wind", entry['wind'], retain=True)
                 
-                print(f"Daten für {min(len(data), 24)} Stunden an MQTT gesendet.")
                 time.sleep(2)
                 client.loop_stop(); client.disconnect()
             else:
-                print("FEHLER: Keine Daten extrahiert.")
+                print("FEHLER: Keine Daten extrahiert. Screenshot erstellt.")
                 await page.screenshot(path="/usr/src/app/debug_error.png")
 
         except Exception as e:
             print(f"KRITISCHER FEHLER: {e}")
-            try: await page.screenshot(path="/usr/src/app/debug_crash.png")
-            except: pass
             
         await browser.close()
 
 if __name__ == "__main__":
     while True:
         asyncio.run(scrape())
-        print("Warte 30 Min bis zum nächsten Scan...")
+        print("Warte 30 Min...")
         time.sleep(1800)

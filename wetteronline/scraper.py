@@ -1,105 +1,75 @@
 import asyncio, re, json, time, os
-from datetime import datetime
 from playwright.async_api import async_playwright
 import paho.mqtt.client as mqtt
 
 # --- KONFIGURATION ---
 MQTT_HOST = "core-mosquitto"
 MQTT_USER = os.getenv("MQTT_USER", "mqtt-user")
-MQTT_PASS = os.getenv("MQTT_PASSWORD")
+MQTT_PASS = os.getenv("MQTT_PASS")
 LOCATION = os.getenv("LOCATION", "grafing")
 URL = f"https://www.wetteronline.de/wetter/{LOCATION.strip('/')}"
 
 client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
 
-def send_discovery(h_id, h_name, sensor_type, unit, icon):
-    topic = f"homeassistant/sensor/wo_{h_id}_{sensor_type}/config"
+def send_discovery(h_id, h_name):
+    topic = f"homeassistant/sensor/wo_{h_id}_temp/config"
     payload = {
-        "name": f"WO {h_name} {sensor_type.capitalize()}",
-        "state_topic": f"wetteronline/hourly/{h_id}/{sensor_type}",
-        "unique_id": f"wo_{sensor_type}_{h_id}",
-        "icon": icon,
-        "device_class": "temperature" if sensor_type == "temp" else None,
-        "unit_of_measurement": unit if unit else None
+        "name": f"WO {h_name} Temp",
+        "state_topic": f"wetteronline/hourly/{h_id}/temp",
+        "unique_id": f"wo_temp_{h_id}",
+        "unit_of_measurement": "°C",
+        "device_class": "temperature",
+        "icon": "mdi:thermometer"
     }
     client.publish(topic, json.dumps(payload), retain=True)
 
 async def scrape():
     async with async_playwright() as p:
-        # Tarnung: Wir geben uns als normaler Desktop-Browser aus
-        browser = await p.chromium.launch(executable_path="/usr/bin/chromium", headless=True, args=["--no-sandbox", "--disable-gpu"])
-        context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-            viewport={"width": 1280, "height": 1000}
-        )
+        browser = await p.chromium.launch(executable_path="/usr/bin/chromium", headless=True, args=["--no-sandbox"])
+        context = await browser.new_context(viewport={"width": 1280, "height": 2000})
         page = await context.new_page()
         
-        print(f"STARTE SCAN: {URL}")
+        print(f"STARTE ULTRA-SCAN: {URL}")
         try:
-            # 1. Seite laden mit langer Wartezeit
-            response = await page.goto(URL, timeout=60000, wait_until="load")
-            print(f"Status Code: {response.status if response else 'Kein Response'}")
-            
-            # Warten, bis die Seite wirklich aufgebaut ist
-            await asyncio.sleep(10)
+            await page.goto(URL, timeout=60000, wait_until="load")
+            await asyncio.sleep(8) # Warten auf JS-Inhalte
 
-            # Debug-Screenshot: Was sieht der Bot am Anfang?
-            await page.screenshot(path="/usr/src/app/step1_start.png")
+            # 1. Cookie-Banner "blind" wegdrücken (Eingabetaste simulieren)
+            await page.keyboard.press("Escape")
+            await asyncio.sleep(2)
 
-            # 2. Cookie-Banner mit Brute-Force wegschalten
-            try:
-                for text in ["Akzeptieren", "Zustimmen", "Alle akzeptieren", "OK"]:
-                    btn = page.get_by_role("button", name=re.compile(text, re.IGNORECASE))
-                    if await btn.count() > 0:
-                        print(f"Klicke Cookie-Button: {text}")
-                        await btn.first.click()
-                        await asyncio.sleep(3)
-                        break
-            except: pass
+            # 2. Den Pfeil-Button suchen (wir suchen jetzt nach JEDEM Element, das klickbar ist und rechts liegt)
+            # Wir nutzen JavaScript, um den Pfeil im Karussell zu finden
+            print("Suche Stunden-Pfeil...")
+            for _ in range(17):
+                clicked = await page.evaluate("""() => {
+                    const arrow = document.querySelector('.arrow-right, [class*="arrow-right"], .hourly-forecast-container .arrow');
+                    if (arrow) { arrow.click(); return true; }
+                    return false;
+                }""")
+                if not clicked: break
+                await asyncio.sleep(0.5)
 
-            # 3. Pfeil finden (neue, sehr breite Suche)
-            # Wir suchen nach dem Element, das den Text "nächste Stunden" oder ähnliches im Umfeld hat
-            arrow = page.locator(".arrow-right, [class*='arrow-right'], .hourly-forecast-container >> i").first
-            
-            if await arrow.count() > 0:
-                print("Pfeil gefunden. Starte Klicks...")
-                for k in range(17):
-                    try:
-                        await arrow.click(force=True)
-                        await asyncio.sleep(0.4)
-                    except: break
-                print("Klicks beendet.")
-            else:
-                print("HINWEIS: Kein Pfeil gefunden. Versuche Direktsuche im Quelltext.")
+            # 3. Datenextraktion über Textanalyse (extrem robust)
+            data = await page.evaluate("""() => {
+                const results = [];
+                // Wir sammeln alles, was nach Uhrzeit aussieht
+                const texts = Array.from(document.querySelectorAll('*'))
+                    .filter(el => /^[0-2][0-9]:00$/.test(el.innerText?.trim()) && el.children.length === 0);
 
-            # 4. Daten-Extraktion (verbessert)
-            data = await page.evaluate("""
-                () => {
-                    const items = [];
-                    // Suche nach allen Divs, die eine Uhrzeit (z.B. 14:00) enthalten
-                    const divs = Array.from(document.querySelectorAll('div, span, wo-forecast-hour'));
-                    divs.forEach(d => {
-                        const text = d.innerText || "";
-                        const hourMatch = text.match(/^([0-2][0-9]:00)$/);
-                        if (hourMatch) {
-                            const parent = d.closest('div[class*="hour"], wo-forecast-hour, .forecast-hour');
-                            if (parent) {
-                                const h = hourMatch[1];
-                                const tMatch = parent.innerText.match(/(-?\\d+)°/);
-                                if (tMatch && !items.find(i => i.hour === h)) {
-                                    items.push({
-                                        hour: h,
-                                        temp: tMatch[1],
-                                        condition: "Check Screenshot",
-                                        wind: "Check Screenshot"
-                                    });
-                                }
-                            }
+                texts.forEach(el => {
+                    const hour = el.innerText.trim();
+                    const container = el.closest('div, wo-forecast-hour, .forecast-hour');
+                    if (container) {
+                        // Suche die Temperatur (°C) in diesem Block
+                        const tempMatch = container.innerText.match(/(-?\\d+)°/);
+                        if (tempMatch && !results.find(r => r.hour === hour)) {
+                            results.push({ hour: hour, temp: tempMatch[1] });
                         }
-                    });
-                    return items;
-                }
-            """)
+                    }
+                });
+                return results;
+            }""")
 
             if data:
                 print(f"ERFOLG: {len(data)} Stunden gefunden.")
@@ -109,15 +79,15 @@ async def scrape():
 
                 for entry in data[:24]:
                     h_id = entry['hour'].replace(":", "")
-                    send_discovery(h_id, entry['hour'], "temp", "°C", "mdi:thermometer")
+                    send_discovery(h_id, entry['hour'])
                     client.publish(f"wetteronline/hourly/{h_id}/temp", entry['temp'], retain=True)
+                    print(f"MQTT -> {entry['hour']}: {entry['temp']}°C")
                 
-                print("Daten gesendet.")
                 time.sleep(2)
                 client.loop_stop(); client.disconnect()
             else:
-                print("FEHLER: Keine Daten gefunden. Siehe Screenshot step2_final.png")
-                await page.screenshot(path="/usr/src/app/step2_final.png")
+                print("FEHLER: Keine Daten im DOM gefunden. Screenshot zur Analyse folgt.")
+                await page.screenshot(path="/usr/src/app/debug_final.png")
 
         except Exception as e:
             print(f"FEHLER: {e}")
@@ -126,6 +96,4 @@ async def scrape():
 
 if __name__ == "__main__":
     while True:
-        asyncio.run(scrape())
-        print("Warte 30 Min...")
-        time.sleep(1800)
+        asyncio.run(scrape()); time.sleep(1800)

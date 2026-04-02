@@ -31,8 +31,13 @@ async def scrape():
         page = await context.new_page()
         print(f"STARTE DEEP-SCAN (TEMP/WIND/WETTER): {URL}")
         try:
-            await page.goto(URL, timeout=60000, wait_until="networkidle")
+            await page.goto(URL, timeout=60000, wait_until="domcontentloaded")
             
+            # Warte kurz, bis der Pfeil wirklich im HTML erscheint (max. 10 Sek)
+            await page.wait_for_selector(".hourly-forecast-container .arrow-right", timeout=10000)
+
+            arrow = page.locator(arrow_selector)
+
             # --- NEU: KLICK-SIMULATION FÜR DAS STUNDEN-KARUSSELL ---
             # Wir suchen den rechten Pfeil im Stunden-Container
             arrow_selector = ".hourly-forecast-container .arrow-right, .forecast-hourly .arrow-right"

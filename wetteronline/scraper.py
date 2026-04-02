@@ -23,16 +23,26 @@ async def scrape():
             await asyncio.sleep(5) 
 
             # --- 1. COOKIE-BANNER WEGKLICKEN (PRÄZISE) ---
-            # Wir suchen exakt nach dem Text, den du auf dem Screenshot gesehen hast
-            cookie_button = page.get_by_role("button", name=re.compile(r"Akzeptieren & Weiter", re.IGNORECASE))
-            if await cookie_button.count() > 0:
-                print("Cookie-Banner 'Akzeptieren & Weiter' gefunden. Klicke...")
-                await cookie_button.first.click()
-                await asyncio.sleep(3) # Warten, bis der Banner verschwindet
-            else:
-                # Fallback, falls es kein Button-Element ist
-                await page.click("text=Akzeptieren & Weiter")
-                await asyncio.sleep(3)
+            # --- 1. COOKIE-BANNER IN IFRAMES SUCHEN ---
+            print("Suche Cookie-Banner (auch in Iframes)...")
+            banner_clicked = False
+            for frame in page.frames:
+                try:
+                    # Suche nach dem Button mit deinem Text "Akzeptieren & Weiter"
+                    btn = frame.get_by_role("button", name=re.compile(r"Akzeptieren & Weiter", re.IGNORECASE))
+                    if await btn.count() > 0:
+                        print(f"Banner im Frame '{frame.name}' gefunden. Klicke...")
+                        await btn.first.click()
+                        banner_clicked = True
+                        await asyncio.sleep(3)
+                        break
+                except: continue
+            
+            if not banner_clicked:
+                # Letzter Versuch: Einfach ENTER drücken, oft fokusiert der Browser den OK-Button automatisch
+                await page.keyboard.press("Enter")
+                print("Kein Button im Iframe gefunden, Enter-Taste als Fallback gedrückt.")
+
 
             # --- 2. 17x KLICKEN FÜR 24 STUNDEN ---
             print("Suche Stunden-Pfeil...")

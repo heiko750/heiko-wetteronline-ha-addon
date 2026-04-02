@@ -89,11 +89,11 @@ async def scrape():
                 time.sleep(2)
                 client.loop_stop(); client.disconnect()
                 await page.screenshot(path="/usr/src/app/debug.png")
-                print("Screenshot erstellt for debugging")
+                print("Screenshot debug.png erstellt for debugging")
             else:
                 # Debug: Screenshot wenn nichts gefunden wird
                 await page.screenshot(path="/usr/src/app/debug.png")
-                print("Keine Daten gefunden - Screenshot erstellt.")
+                print("Keine Daten gefunden - Screenshot debug.png erstellt.")
         except Exception as e: print(f"FEHLER: {e}")
         await browser.close()
 
